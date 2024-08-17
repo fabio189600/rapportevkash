@@ -1,0 +1,70 @@
+from flask import Flask, request, jsonify
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
+from openpyxl import Workbook
+import os
+
+app = Flask(__name__)
+
+# Konfiguration der Mail
+SENDER_EMAIL = "deine.email@example.com"
+SENDER_PASSWORD = "deinpasswort"
+RECEIVER_EMAIL = "empfaenger@example.com"
+
+def create_excel_file(data):
+    # Excel-Datei erstellen
+    wb = Workbook()
+    ws = wb.active
+
+    ws.append(["Name", data['name']])
+    ws.append(["Datum", data['datum']])
+    ws.append(["Beschreibung", data['beschreibung']])
+
+    file_path = "rapport.xlsx"
+    wb.save(file_path)
+    return file_path
+
+def send_email_with_attachment(file_path):
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = RECEIVER_EMAIL
+    msg['Subject'] = "Neuer Rapport"
+
+    body = "Bitte finden Sie den Rapport im Anhang."
+    msg.attach(MIMEText(body, 'plain'))
+
+    attachment = open(file_path, "rb")
+    part = MIMEBase('application', 'octet-stream')
+    part.set_payload((attachment).read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', "attachment; filename= " + file_path)
+
+    msg.attach(part)
+
+    server = smtplib.SMTP('smtp.example.com', 587)
+    server.starttls()
+    server.login(SENDER_EMAIL, SENDER_PASSWORD)
+    text = msg.as_string()
+    server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, text)
+    server.quit()
+
+@app.route('/send_rapport', methods=['POST'])
+def send_rapport():
+    data = request.json
+
+    # Excel-Datei erstellen
+    file_path = create_excel_file(data)
+
+    try:
+        # E-Mail versenden
+        send_email_with_attachment(file_path)
+        os.remove(file_path)  # Lösche die Datei nach dem Senden
+        return jsonify({"message": "Rapport erfolgreich gesendet!"})
+    except Exception as e:
+        return jsonify({"message": f"Fehler beim Senden: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
